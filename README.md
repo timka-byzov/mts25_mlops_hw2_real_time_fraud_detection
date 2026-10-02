@@ -24,12 +24,21 @@ DISCLAIMER
      - Гео-расстояния
      - Кодирование категориальных переменных
    - Производит скоринг с порогом 0.98.
-   - Выгружает результат скоринга в топик kafka `scoring`
+   - Выгружает результат скоринга в топик kafka `scores`.
+   - Применяет сохранённые статистики препроцессинга; обучение и загрузка train.csv при запуске не нужны.
 
 3. **Kafka Infrastructure**:
    - Zookeeper + Kafka брокер
-   - `kafka-setup`: автоматически создает топики `transactions` и `scoring`
+   - `kafka-setup`: автоматически создает топики `transactions` и `scores`
    - Kafka UI: веб-интерфейс для мониторинга сообщений (порт 8080)
+
+4. **`score_writer`**:
+   - Читает `scores` и сохраняет три поля результата в PostgreSQL.
+   - Повторный `transaction_id` не создаёт дубликат.
+
+5. **PostgreSQL**:
+   - Таблица `transaction_scores` создаётся автоматически.
+   - Данные сохраняются в Docker volume.
 
 ## 🚀 Быстрый старт
 
@@ -39,18 +48,21 @@ DISCLAIMER
 
 ### Запуск
 ```bash
-git clone https://github.com/your-repo/fraud-detection-system.git
-cd fraud-detection-system
+git clone https://github.com/timka-byzov/mts25_mlops_hw2_real_time_fraud_detection.git mlops-fraud-detection
+cd mlops-fraud-detection
 
 # Сборка и запуск всех сервисов
-docker-compose up --build
+docker compose up --build
 ```
+На Mac с установленным Podman вместо `docker compose` используйте `podman compose`.
+
 После запуска:
 - **Streamlit UI**: http://localhost:8501
 - **Kafka UI**: http://localhost:8080
 - **Логи сервисов**: 
   ```bash
-  docker-compose logs <service_name>  # Например: fraud_detector, kafka, interface
+  docker compose logs <service_name>  # Например: fraud_detector, kafka, interface
+  ```
 
 ## 🛠️ Использование
 
@@ -65,12 +77,17 @@ docker-compose up --build
  - Для первых тестов рекомендуется загружать небольшой семпл данных (до 100 транзакций) за раз, чтобы исполнение кода не заняло много времени.
 
 ### 2. Мониторинг:
- - **Kafka UI**: Просматривайте сообщения в топиках transactions и scoring
- - **Логи обработки**: /app/logs/service.log внутри контейнера fraud_detector
+ - **Kafka UI**: Просматривайте сообщения в топиках transactions и scores
+ - **Логи обработки**: `docker compose logs fraud_detector score_writer`
 
 ### 3. Результаты:
 
- - Скоринговые оценки пишутся в топик scoring в формате:
+ - Для проверки без скачивания датасета нажмите «Отправить пример» или загрузите `interface/examples/transactions.csv`.
+ - В разделе «Результаты скоринга» нажмите «Посмотреть результаты»: появятся 10 последних фродовых записей и гистограмма скоров последних 100 транзакций.
+ - Для обновления данных повторно нажмите кнопку. При пустой базе интерфейс показывает соответствующее сообщение.
+
+
+ - Скоринговые оценки пишутся в топик scores в формате:
     ```json
     {
     "score": 0.995, 
@@ -82,13 +99,16 @@ docker-compose up --build
 ```
 .
 ├── fraud_detector/
-│   ├── preprocessing.py    # Логика препроцессинга
-│   ├── scorer.py           # ML-модель и предсказания
-│   ├── app.py              # Kafka Consumer/Producer
+│   ├── src/preprocessing.py
+│   ├── src/preprocessor.py
+│   ├── src/scorer.py
+│   ├── app/app.py
 │   └── Dockerfile
 ├── interface/
 │   └── app.py              # Streamlit UI
-├── docker-compose.yaml
+├── score_writer/
+├── postgres/init.sql
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -96,7 +116,7 @@ docker-compose up --build
 ```yml
 Топики:
 - transactions (входные данные)
-- scoring (результаты скоринга)
+- scores (результаты скоринга)
 
 Репликация: 1 (для разработки)
 Партиции: 3
@@ -106,5 +126,25 @@ docker-compose up --build
 
 Для полной функциональности убедитесь, что:
 1. Модель `my_catboost.cbm` размещена в `fraud_detector/models/`
-2. Тренировочные данные находятся в `fraud_detector/train_data/`
-3. Порты 8080, 8501 и 9095 свободны на хосте
+2. Артефакт `preprocessing.json` размещён в `fraud_detector/models/` (включён в репозиторий)
+3. Порты 8080, 8501, 9095 и 5433 свободны на хосте
+
+
+Для автоматической проверки работающего проекта:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest -q
+python scripts/smoke_test.py
+```
+
+Для остановки с сохранением данных: `docker compose down`.
+Для изменения порога задайте `FRAUD_THRESHOLD` перед запуском (по умолчанию `0.98`).
+
+Повторная подготовка статистик из своего `train.csv`, если потребуется:
+
+```bash
+python scripts/prepare_preprocessing.py --train /path/to/train.csv
+```

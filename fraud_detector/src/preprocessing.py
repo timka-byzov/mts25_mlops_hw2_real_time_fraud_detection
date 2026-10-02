@@ -49,7 +49,7 @@ def add_distance_features(df):
 
 
 # Calculate means for encoding at docker container start
-def load_train_data():
+def load_train_data(train_path='./train_data/train.csv'):
 
     logger.info('Loading training data...')
 
@@ -59,7 +59,7 @@ def load_train_data():
     n_cats = 50
 
     # Import Train dataset
-    train = pd.read_csv('./train_data/train.csv').drop(columns=['name_1', 'name_2', 'street', 'post_code'])
+    train = pd.read_csv(train_path).drop(columns=['name_1', 'name_2', 'street', 'post_code'])
     logger.info('Raw train data imported. Shape: %s', train.shape)
 
     # Add some simple time features

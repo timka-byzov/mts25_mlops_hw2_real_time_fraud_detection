@@ -1,0 +1,3 @@
+-r fraud_detector/requirements.txt
+-r interface/requirements.txt
+-r score_writer/requirements.txt
