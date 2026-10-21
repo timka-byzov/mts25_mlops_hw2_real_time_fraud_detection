@@ -82,7 +82,10 @@ services:
       KAFKA_TRANSACTIONS_TOPIC: "transactions"
       KAFKA_SCORING_TOPIC: "scores"
       FRAUD_THRESHOLD: "${FRAUD_THRESHOLD:-0.98}"
+      MODEL_DIR: /opt/models
       PYTHONUNBUFFERED: "1"
+    volumes:
+      - model-data:/opt/models:ro
     depends_on:
       kafka-setup:
         condition: service_completed_successfully
@@ -163,6 +166,45 @@ services:
       retries: 6
       start_period: 30s
 
+  airflow:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    restart: unless-stopped
+    command: standalone
+    networks:
+      - ml-scorer
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+      AIRFLOW__WEBSERVER__WORKERS: "1"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      PYTHONPATH: /opt/airflow:/opt/airflow/project_src
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: fraud
+      POSTGRES_USER: fraud
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-fraud}"
+      TRAIN_CSV: /opt/airflow/data/train.csv
+      MODEL_DIR: /opt/models
+      BATCH_SIZE: "${BATCH_SIZE:-5000}"
+      HISTORY_MONTHS: "${HISTORY_MONTHS:-36}"
+      WINDOW_MONTHS: "${WINDOW_MONTHS:-3}"
+      OPENBLAS_NUM_THREADS: "2"
+      OMP_NUM_THREADS: "2"
+    volumes:
+      - airflow-home:/opt/airflow
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./airflow/jobs:/opt/airflow/jobs:ro
+      - ./fraud_detector/src:/opt/airflow/project_src:ro
+      - ./data:/opt/airflow/data:ro
+      - model-data:/opt/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 networks:
   ml-scorer:
     driver: bridge
@@ -172,3 +214,5 @@ volumes:
   kafka-data:
   zookeeper-data:
   zookeeper-log:
+  airflow-home:
+  model-data:

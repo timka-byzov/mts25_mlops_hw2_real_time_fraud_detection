@@ -16,8 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'fraud_detector/src'))
 sys.path.insert(0, str(ROOT / 'interface'))
 
-from preprocessor import TransactionPreprocessor
-from scorer import make_pred
+from scorer import ReloadingScorer
 from results import fetch_results
 
 
@@ -27,6 +26,7 @@ def main():
     parser.add_argument('--postgres-host', default='127.0.0.1')
     parser.add_argument('--postgres-port', default='5433')
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument('--model-dir', default=None)
     args = parser.parse_args()
     os.environ['POSTGRES_HOST'] = args.postgres_host
     os.environ['POSTGRES_PORT'] = args.postgres_port
@@ -44,9 +44,7 @@ def main():
             raise TimeoutError('Kafka observer could not acquire partitions')
 
     transactions = pd.read_csv(ROOT / 'interface/examples/transactions.csv').head(120)
-    predictions = make_pred(TransactionPreprocessor.load(
-        ROOT / 'fraud_detector/models/preprocessing.json'
-    ).transform(transactions))
+    predictions = ReloadingScorer(args.model_dir).predict(transactions)
     identifiers = [prefix + '-' + str(index) for index in range(len(transactions))]
     expected = {
         identifier: (float(row.score), int(row.fraud_flag))
@@ -78,7 +76,8 @@ def main():
                     raise RuntimeError(str(message.error()))
                 record = json.loads(message.value())
                 if message.topic() == 'scores' and record.get('transaction_id') in expected:
-                    assert set(record) == {'transaction_id', 'score', 'fraud_flag'}
+                    assert set(record) == {'transaction_id', 'score', 'fraud_flag', 'model_version'}
+                    assert record['model_version'] == predictions['model_version'].iloc[0]
                     score, flag = expected[record['transaction_id']]
                     np.testing.assert_allclose(record['score'], score, rtol=0, atol=1e-12)
                     assert record['fraud_flag'] == flag
@@ -111,6 +110,7 @@ def main():
     observer.close()
     print(json.dumps({
         'status': 'passed', 'transactions': len(expected),
+        'model_version': predictions['model_version'].iloc[0],
         'fraudulent': sum(flag for _, flag in expected.values()),
         'duplicate_delivery_checked': True, 'invalid_messages_checked': sorted(rejected_stages),
         'histogram_records': len(displayed['recent_scores']),

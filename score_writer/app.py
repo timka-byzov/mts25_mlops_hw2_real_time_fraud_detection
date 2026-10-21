@@ -13,8 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 def validate_score(payload):
-    if not isinstance(payload, dict) or set(payload) != {'transaction_id', 'score', 'fraud_flag'}:
+    required = {'transaction_id', 'score', 'fraud_flag'}
+    if not isinstance(payload, dict) or set(payload) not in (required, required | {'model_version'}):
         raise ValueError('Score message must contain transaction_id, score and fraud_flag')
+    if 'model_version' in payload and (
+        not isinstance(payload['model_version'], str) or not payload['model_version']
+    ):
+        raise ValueError('Invalid model_version')
     transaction_id = payload['transaction_id']
     score = payload['score']
     fraud_flag = payload['fraud_flag']

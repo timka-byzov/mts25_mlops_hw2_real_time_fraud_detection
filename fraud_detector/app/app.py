@@ -11,8 +11,7 @@ from confluent_kafka import Consumer, Producer
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 
-from preprocessor import TransactionPreprocessor
-from scorer import make_pred
+from scorer import ReloadingScorer
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ class ProcessingService:
         self.transactions_topic = os.getenv('KAFKA_TRANSACTIONS_TOPIC', 'transactions')
         self.scores_topic = os.getenv('KAFKA_SCORING_TOPIC', 'scores')
         self.errors_topic = os.getenv('KAFKA_ERRORS_TOPIC', 'errors')
-        self.preprocessor = TransactionPreprocessor.load(ROOT / 'models/preprocessing.json')
+        self.scorer = ReloadingScorer()
         self.running = True
         self.heartbeat = Path('/app/logs/heartbeat')
         self.consumer.subscribe([self.transactions_topic])
@@ -65,12 +64,12 @@ class ProcessingService:
             raise ValueError('transaction_id must be a nonempty string of at most 256 characters')
         if not isinstance(payload['data'], dict):
             raise ValueError('Transaction data must be an object')
-        features = self.preprocessor.transform(pd.DataFrame([payload['data']]))
-        prediction = make_pred(features, 'kafka_stream').iloc[0]
+        prediction = self.scorer.predict(pd.DataFrame([payload['data']])).iloc[0]
         return {
             'transaction_id': transaction_id,
             'score': float(prediction['score']),
             'fraud_flag': int(prediction['fraud_flag']),
+            'model_version': prediction['model_version'],
         }
 
     def process_messages(self):

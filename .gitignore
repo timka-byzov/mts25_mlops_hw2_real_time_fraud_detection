@@ -8,3 +8,4 @@ work/
 fraud_detector/train_data/
 *.zip
 .env
+runtime/

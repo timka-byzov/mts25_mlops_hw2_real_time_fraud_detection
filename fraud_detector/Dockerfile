@@ -14,4 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование исходного кода
 COPY . .
 
+RUN mkdir -p /opt/models && chmod 777 /opt/models
+
 CMD ["python", "./app/app.py"]

@@ -23,3 +23,9 @@ def test_invalid_score_is_rejected(payload):
 @pytest.mark.parametrize('score, flag', [(0, 0), (1, 1), (0.8, 0)])
 def test_valid_score(score, flag):
     assert validate_score({'transaction_id': 'x', 'score': score, 'fraud_flag': flag}) == ('x', score, flag)
+
+
+def test_score_with_model_version_can_be_stored():
+    assert validate_score({
+        'transaction_id': 'x', 'score': 0.5, 'fraud_flag': 0, 'model_version': '2020-03',
+    }) == ('x', 0.5, 0)

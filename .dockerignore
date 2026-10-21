@@ -1,0 +1,9 @@
+.git
+.venv
+data
+work
+runtime
+fraud_detector/train_data
+__pycache__
+.pytest_cache
+*.pyc
